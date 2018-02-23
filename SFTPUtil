@@ -1,0 +1,333 @@
+package payment.bankcommon.util;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import java.util.Vector;
+
+import org.apache.log4j.Logger;
+
+import payment.tools.system.CodeException;
+import payment.tools.util.IoUtil;
+import payment.tools.util.StringUtil;
+
+import com.jcraft.jsch.Channel;
+import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.Session;
+import com.jcraft.jsch.SftpException;
+import com.jcraft.jsch.ChannelSftp.LsEntry;
+
+/**
+ * 
+ * <pre>
+ * Modify Information:
+ * Author       Date        Description
+ * ============ =========== ============================
+ * jiangtao     2018-01-04  Create this file
+ * </pre>
+ * 
+ */
+public class SFTPUtil {
+
+    protected static final Logger logger = Logger.getLogger("system");
+
+    public static final String SFTP_PROTOCAL = "sftp";
+
+    private final static int CONNECTTIMEOUT = 15000;
+
+    private String hostIp;
+
+    private int hostPort;
+
+    private String username;
+
+    private String password;
+
+    ChannelSftp sftp = null;
+
+    public SFTPUtil(String hostIp, int hostPort, String username, String password) {
+        super();
+        this.hostIp = hostIp;
+        this.hostPort = hostPort;
+        this.username = username;
+        this.password = password;
+    }
+
+    /**
+     * 创建SFTP连接
+     * 
+     * @return
+     */
+    public boolean connect() {
+        try {
+            JSch jsch = new JSch();
+            Session sshSession = jsch.getSession(username, hostIp, hostPort);
+            logger.info("session created...");
+            sshSession.setPassword(password);
+            Properties sshConfig = new Properties();
+            // 设置第一次登陆的时候提示，可选值：(ask | yes | no)
+            sshConfig.put("StrictHostKeyChecking", "no");
+            sshSession.setConfig(sshConfig);
+            // 设置登陆超时时间
+            sshSession.connect(CONNECTTIMEOUT);
+            logger.info("session connected...");
+            Channel channel = sshSession.openChannel("sftp");
+            channel.connect(CONNECTTIMEOUT);
+            logger.info("channel connected...");
+            sftp = (ChannelSftp) channel;
+            logger.info("sftp connected...");
+            return true;
+        } catch (Exception e) {
+            logger.error("SFTP连接失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 上传本地文件
+     * 
+     * @param filePath
+     *            服务器目录
+     * @param fileName
+     *            服务器文件名称
+     * @param uploadFile
+     *            上传的本地文件对象
+     * @return
+     */
+    public boolean uploadFile(String filePath, String fileName, File uploadFile) {
+        try {
+            sftp.cd(filePath);// 进入到服务器对应的文件目录
+            sftp.put(new FileInputStream(uploadFile), fileName);// 上传文件到指定目录，并指定上传后的文件名称
+        } catch (SftpException e) {
+            logger.error("目标目录路径有误", e);
+            return false;
+        } catch (FileNotFoundException e) {
+            logger.error("上传目录路径有误", e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 上传缓存文件
+     * 
+     * @param directory
+     * @param fileName
+     * @param uploadStream
+     * @return
+     */
+    public boolean uploadFile(String directory, String fileName, InputStream uploadStream) {
+        String[] directories = directory.split("\\/");
+        try {
+            sftp.cd("/");
+            for (int i = 0; i < directories.length; i++) {
+                if (StringUtil.isNotEmpty(directories[i])) {
+                    try {
+                        sftp.ls(directories[i]);
+                    } catch (Exception e) {
+                        sftp.mkdir(directories[i]);
+                    }
+                    sftp.cd(directories[i]);
+                }
+            }
+            sftp.put(uploadStream, fileName);
+            uploadStream.close();
+            logger.info("文件上传成功");
+            return true;
+        } catch (Exception e) {
+            logger.error("文件上传失败！", e);
+            return false;
+        }
+    }
+
+    /**
+     * 下载文件到本地
+     * 
+     * @param filePath
+     *            服务器文件目录
+     * @param fileName
+     *            服务器文件名称
+     * @param saveFile
+     *            下载的本地文件对象
+     * @return
+     */
+    public boolean downloadFile(String filePath, String fileName, File saveFile) {
+        try {
+            sftp.cd("/");
+            sftp.cd(filePath);
+            sftp.get(fileName, new FileOutputStream(saveFile));
+        } catch (SftpException e) {
+            logger.error("目标目录路径有误", e);
+            return false;
+        } catch (FileNotFoundException e) {
+            logger.error("上传目录路径有误", e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 下载文件到缓存
+     * 
+     * @param filePath
+     *            服务器文件目录
+     * @param fileName
+     *            服务器文件名称
+     * @return
+     * @throws SftpException
+     * @throws SftpException
+     */
+    public InputStream downloadFile(String filePath, String fileName) throws SftpException {
+        try {
+            sftp.cd("/");
+            sftp.cd(filePath);
+            return sftp.get(fileName);
+        } catch (SftpException e) {
+            logger.error("目标目录路径有误", e);
+            throw e;
+        }
+    }
+    
+    /**
+     * 下载同一目录下的多个文件，返回一个压缩文件
+     *
+     * @param filePath
+     * @param fileNames
+     * @return
+     * @throws SftpException
+     * @throws IOException
+     * @throws CodeException
+     */
+    public byte[] downloadFilesToZip(String filePath, String[] fileNames) throws SftpException, IOException, CodeException {
+        List<FileEntry> list = new ArrayList<FileEntry> ();
+        for (String fileName : fileNames) {
+            String[] items = fileName.split("\\/");
+            InputStream inputStream = null;
+            try {
+                sftp.cd("/");
+                sftp.cd(StringUtil.trim(filePath));
+                for (int i = 0; i < items.length - 1; i++) {
+                    sftp.cd(StringUtil.trim(items[i]));
+                }
+                
+                inputStream = sftp.get(StringUtil.trim(fileName));
+            } catch (SftpException e) {
+                logger.error("文件" + fileName + "目标目录路径有误", e);
+                continue;
+            }
+            
+            fileName = StringUtil.trim(items[items.length-1]);
+            
+            FileEntry entry = new FileEntry();
+            entry.setFileName(fileName);
+            entry.setContent(IoUtil.read(inputStream, 1024));
+            list.add(entry);
+        }
+        byte[] zipByte = null;
+        try {
+            zipByte = CompressUtil.zip(list);
+        } catch (CodeException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("压缩文件失败", e);
+            throw new CodeException("e0002", "压缩文件失败");
+        }
+        
+        return zipByte;
+    }
+
+    /**
+     * 断开SFTP连接
+     */
+    public void disconnect() {
+        try {
+            if(sftp != null) {
+                sftp.getSession().disconnect();
+                sftp.disconnect();
+                sftp.exit();
+            }
+        } catch (JSchException e) {
+            logger.error("", e);
+        }
+    }
+
+    /**
+     * 判断文件是否存在
+     * 
+     * @param filePath
+     * @param fileName
+     * @return
+     * @throws CodeException
+     */
+    @SuppressWarnings("unchecked")
+    public boolean isExist(String filePath, String fileName) throws CodeException {
+        try {
+            sftp.cd("/");
+            Vector<LsEntry> files = sftp.ls(filePath);
+            for (LsEntry entry : files) {
+                if (entry.getFilename().equals(fileName)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (SftpException e) {
+            if (e.id == 2) {
+                return false;
+            } else {
+                logger.error("访问SFTP异常", e);
+                throw new CodeException("2001", "访问SFTP异常");
+            }
+        }
+    }
+
+    /**
+     * 删除文件
+     * @param filePath
+     * @param fileName
+     * @return
+     */
+    public boolean deleteFile(String filePath, String fileName) {
+        try {
+            sftp.cd("/");
+            sftp.cd(filePath);
+            sftp.rm(fileName);
+            return true;
+        } catch (SftpException e) {
+            if (e.id == 2) {
+                logger.info("文件无需删除");
+                return true;
+            } else {
+                logger.error("删除文件失败", e);
+                return false;
+            }
+        }
+    }
+
+    /**
+     * 修改文件名
+     * @param directory
+     * @param fileName
+     * @param newFileName
+     * @return
+     */
+    public boolean renameFile(String directory, String fileName, String newFileName) {
+        try {
+            sftp.cd("/");
+            sftp.cd(directory);
+            sftp.rename(fileName, newFileName);
+            logger.info("文件重命名成功");
+            return true;
+        } catch (Exception e) {
+            logger.error("文件重命名失败！", e);
+            return false;
+        }
+    }
+}
