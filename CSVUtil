@@ -1,0 +1,329 @@
+package payment.bankcommon.util;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import payment.tools.system.CodeException;
+import payment.tools.util.StringUtil;
+
+/**
+ * CSV转换
+ * <pre>
+ * Modify Information:
+ * Author       Date            Description
+ * ============ =============== ============================
+ * zhuqw        2018年2月8日     Create this file
+ * </pre>
+ */
+public class CSVUtil {
+
+    private static final Logger logger = Logger.getLogger("system");
+
+    /**
+     * 拼接符,加入tab保证数据原样展示
+     */
+    private static final String CSV_CONCAT = "\t,";
+
+    /**
+     * 换行符
+     */
+    private static final String LINE_BREAK = "\r\n";
+
+    /**
+     * <p>二维字符数组转成CSV字符串</p>
+     * @author zhuqw
+     * @date 2018年2月8日 上午10:31:53
+     * @param details
+     * @return
+     */
+    public static String toCsvContent(String[][] details) {
+        if (null == details) {
+            return null;
+        }
+
+        StringBuffer contentBuffer = new StringBuffer();
+        for (String[] line : details) {
+            appendLine(contentBuffer, line);
+        }
+
+        return StringUtil.trim(contentBuffer.toString());
+    }
+
+    /**
+     * <p>字符数组集合转化为CSV字符串</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:45:58
+     * @param details
+     * @return
+     */
+    public static String toCsvContent(List<String[]> details) {
+        if (null == details) {
+            return null;
+        }
+
+        StringBuffer contentBuffer = new StringBuffer();
+        for (String[] line : details) {
+            appendLine(contentBuffer, line);
+        }
+
+        return StringUtil.trim(contentBuffer.toString());
+    }
+
+    /**
+     * <p>追加一行字符数组到Stringbuffer</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:46:19
+     * @param contentBuffer
+     * @param line
+     * @return
+     */
+    public static StringBuffer appendLine(StringBuffer contentBuffer, String[] line) {
+        if (null != line && line.length > 0) {
+            // 所有明细条目后都加入拼接符，冗余一列，防止最后一列为数字时依然科学计数法问题
+            for (String detail : line) {
+                contentBuffer.append(escape(detail)).append(CSV_CONCAT);
+            }
+            contentBuffer.append(LINE_BREAK);
+        }
+
+        return contentBuffer;
+    }
+
+    /**
+     * <p>追加字符集合到Stringbuffer</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:46:56
+     * @param contentBuffer
+     * @param line
+     * @return
+     */
+    public static StringBuffer appendLine(StringBuffer contentBuffer, List<String> line) {
+        if (null != line && line.size() > 0) {
+            // 所有明细条目后都加入拼接符，冗余一列，防止最后一列为数字时依然科学计数法问题
+            for (String detail : line) {
+                contentBuffer.append(escape(detail)).append(CSV_CONCAT);
+            }
+            contentBuffer.append(LINE_BREAK);
+        }
+
+        return contentBuffer;
+    }
+
+    /**
+     * <p>获取CSV文件的行集合，不指定编码，行中数据未反转义，建议使用getLineDetails</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:47:30
+     * @param csvFile
+     * @return
+     * @throws Exception
+     */
+    @Deprecated
+    public static List<String> getLines(File csvFile) throws Exception {
+        return getLines(csvFile, StringUtil.DEFAULT_CHARSET);
+    }
+
+    /**
+     * <p>按照指定编码获取CSV文件的行集合，行中数据未反转义，建议使用getLineDetails</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:47:59
+     * @param csvFile
+     * @param charset
+     * @return
+     * @throws Exception
+     */
+    @Deprecated
+    public static List<String> getLines(File csvFile, String charset) throws Exception {
+        if (null == csvFile) {
+            return null;
+        }
+
+        FileInputStream in = new FileInputStream(csvFile);
+        return getLines(in, charset);
+    }
+
+    /**
+     * <p>不指定编码获取流文件的行集合，行中数据未反转义，建议使用getLineDetails</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:47:59
+     * @param csvFile
+     * @param charset
+     * @return
+     * @throws Exception
+     */
+    @Deprecated
+    public static List<String> getLines(InputStream in) throws CodeException {
+        return getLines(in, StringUtil.DEFAULT_CHARSET);
+    }
+
+    /**
+     * <p>按照指定编码获取流文件的行集合，行中数据未反转义，建议使用getLineDetails</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:47:59
+     * @param csvFile
+     * @param charset
+     * @return
+     * @throws Exception
+     */
+    @Deprecated
+    public static List<String> getLines(InputStream in, String charset) throws CodeException {
+        if (null == in) {
+            return null;
+        }
+
+        BufferedReader reader = null;
+        List<String> lines = new ArrayList<String>();
+        try {
+            reader = new BufferedReader(new InputStreamReader(in, charset));
+            String line = null;
+            while (null != (line = reader.readLine())) {
+                lines.add(line);
+            }
+        } catch (Exception e) {
+            logger.error("读取流文件异常", e);
+            throw new CodeException("2001", "流文件读取异常");
+        } finally {
+            if (null != reader) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    logger.error("BufferedReader流关闭异常！", e);
+                }
+            }
+
+            if (null != in) {
+                try {
+                    in.close();
+                } catch (IOException e) {
+                    logger.error("InputStream流关闭异常！", e);
+                }
+            }
+        }
+
+        return lines;
+    }
+
+    /**
+     * <p>指定字符编码获取csv文件的明细项目数组集合</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:49:14
+     * @param csvFile
+     * @param charset
+     * @return
+     * @throws Exception
+     */
+    public static List<String[]> getLineDetails(File csvFile, String charset) throws Exception {
+        if (null == csvFile) {
+            return null;
+        }
+
+        FileInputStream in = new FileInputStream(csvFile);
+        return getLineDetails(in, charset);
+    }
+
+    /**
+     * <p>获取csv文件的明细项目数组集合，默认编码</p>
+     * @author zhuqw
+     * @date 2018年2月8日 下午2:49:14
+     * @param csvFile
+     * @param charset
+     * @return
+     * @throws Exception
+     */
+    public static List<String[]> getLineDetails(File csvFile) throws Exception {
+        return getLineDetails(csvFile, StringUtil.DEFAULT_CHARSET);
+    }
+
+    public static List<String[]> getLineDetails(InputStream in) throws CodeException {
+        return getLineDetails(in, StringUtil.DEFAULT_CHARSET);
+    }
+
+    public static List<String[]> getLineDetails(InputStream in, String charset) throws CodeException {
+        if (null == in) {
+            return null;
+        }
+
+        BufferedReader reader = null;
+        List<String[]> lines = new ArrayList<String[]>();
+        try {
+            reader = new BufferedReader(new InputStreamReader(in, charset));
+            String line = null;
+            while (null != (line = reader.readLine())) {
+                if (StringUtil.isNotEmpty(line)) {
+                    lines.add(descape(line.split(CSV_CONCAT)));
+                }
+            }
+        } catch (Exception e) {
+            logger.error("读取流文件异常", e);
+            throw new CodeException("2001", "流文件读取异常");
+        } finally {
+            if (null != reader) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    logger.error("BufferedReader流关闭异常！", e);
+                }
+            }
+
+            if (null != in) {
+                try {
+                    in.close();
+                } catch (IOException e) {
+                    logger.error("InputStream流关闭异常！", e);
+                }
+            }
+        }
+
+        return lines;
+    }
+
+    /**
+     * <p>含有逗号需要进行转义</p>
+     * @author zhuqw
+     * @date 2018年2月7日 上午11:48:25
+     * @param content
+     * @return
+     */
+    private static String escape(String content) {
+        if (content.contains(",")) {
+            //如果有双引号，先将双引号转义，避免两边加了双引号后转义错误  
+            if (content.contains("\"")) {
+                content = content.replaceAll("\"", "\"\"");
+            }
+            //将逗号转义  
+            return "\"" + content + "\"";
+        }
+        return content;
+    }
+
+    /**
+     * <p>含有逗号的进行反转义，需要去除两头的双引号</p>
+     * @author zhuqw
+     * @date 2018年2月9日 下午5:28:44
+     * @param details
+     * @return
+     */
+    private static String[] descape(String[] details) {
+        for (int i = 0; i < details.length; i++) {
+            if (details[i].contains(",")) {
+                //有逗号的先将两头引号去掉
+                if (details[i].startsWith("\"") && details[i].endsWith("\"")) {
+                    details[i] = details[i].substring(1, details[i].length() - 1);
+                }
+
+                //双引号需要特殊处理 
+                if (details[i].contains("\"\"")) {
+                    details[i] = details[i].replaceAll("\"\"", "\"");
+                }
+            }
+        }
+        return details;
+    }
+}
